@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Controlo - Polícia Nacional</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
+
+    <nav class="bg-gray-800 border-b border-gray-700 p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-wider text-red-500 flex items-center gap-2">
+                🚨 CENTRAL DE MONITORAMENTO DE FADIGA
+            </h1>
+            <span class="bg-green-500 text-gray-900 px-3 py-1 rounded-full text-xs font-semibold" id="status-conexao">
+                Central Online
+            </span>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-4 md:p-6">
+        <h2 class="text-2xl font-semibold mb-6 text-gray-300">Veículos em Circulação</h2>
+        
+        <div id="grid-veiculos" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="col-span-full text-center py-12 text-gray-500">
+                Aguardando sinal dos veículos na estrada...
+            </div>
+        </div>
+    </main>
+
+    <audio id="alerta-sonoro" src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" preload="auto"></audio>
+
+    <script>
+        const gridVeiculos = document.getElementById('grid-veiculos');
+        const alertaSonoro = document.getElementById('alerta-sonoro');
+        let somTocado = false;
+
+        async function atualizarDashboard() {
+            try {
+                // Consulta a rota que criámos no FastAPI
+                const resposta = await fetch('/api/alertas-atuais');
+                const veiculos = await resposta.json();
+                
+                if (veiculos.length === 0) {
+                    gridVeiculos.innerHTML = `
+                        <div class="col-span-full text-center py-12 text-gray-500 bg-gray-800 rounded-lg border border-gray-700">
+                            Nenhum veículo conectado de momento.
+                        </div>`;
+                    return;
+                }
+
+                let htmlContent = '';
+                let temCritico = false;
+
+                veiculos.forEach(v => {
+                    // Define as cores do card dinamicamente com base no nível de fadiga
+                    let corBorda = 'border-green-500';
+                    let corBgStatus = 'bg-green-500/20 text-green-400';
+                    let animacaoPisca = '';
+
+                   // Converte para minúsculas para evitar erros de digitação (Ex: "Critico", "critico", "CRITICO")
+                const nivel = v.nivel_fadiga.toLowerCase();
+
+                if (nivel === 'alerta' || nivel === 'amarelo') {
+                    corBorda = 'border-yellow-500';
+                    corBgStatus = 'bg-yellow-500/20 text-yellow-400';
+                } else if (nivel === 'critico' || nivel === 'vermelho') {
+                    corBorda = 'border-red-600 shadow-2xl shadow-red-900/50';
+                    corBgStatus = 'bg-red-500 text-white';
+                    animacaoPisca = 'animate-pulse bg-red-950/40';
+                    temCritico = true;
+                }
+
+                    htmlContent += `
+                        <div class="bg-gray-800 rounded-xl border-t-4 ${corBorda} p-5 shadow-md transition-all duration-300 ${animacaoPisca}">
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <span class="text-xs font-mono uppercase tracking-wider text-gray-400">Matrícula</span>
+                                    <h3 class="text-xl font-black text-white tracking-wide">${v.veiculo_id}</h3>
+                                </div>
+                                <span class="px-3 py-1 rounded-full text-xs font-bold uppercase ${corBgStatus}">
+                                    ${v.nivel_fadiga}
+                                </span>
+                            </div>
+                            
+                            <div class="space-y-2 border-t border-gray-700/50 pt-3 text-sm text-gray-300">
+                                <p><span class="text-gray-500">Condutor:</span> <strong class="text-gray-200">${v.motorista_nome}</strong></p>
+                                <p><span class="text-gray-500">Último Alerta:</span> <span class="font-mono">${v.timestamp}</span></p>
+                                <p><span class="text-gray-500">Bocejos Detetados:</span> <span class="font-bold text-orange-400">${v.bocejos}</span></p>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                gridVeiculos.innerHTML = htmlContent;
+
+                // Toca o alarme se houver algum condutor a dormir (Critico)
+                if (temCritico) {
+                    alertaSonoro.play().catch(e => console.log("Áudio bloqueado pelo navegador até haver interação."));
+                } else {
+                    alertaSonoro.pause();
+                    alertaSonoro.currentTime = 0;
+                }
+
+            } catch (erro) {
+                console.error("Erro ao procurar dados na API:", erro);
+                document.getElementById('status-conexao').className = "bg-red-500 text-white px-3 py-1 rounded-full text-xs font-semibold";
+                document.getElementById('status-conexao').innerText = "Erro de Conexão";
+            }
+        }
+
+        // Executa a função a cada 1 segundo para garantir tempo real absoluto
+        setInterval(atualizarDashboard, 1000);
+        // Primeira execução imediata
+        atualizarDashboard();
+    </script>
+</body>
+</html>
